@@ -618,13 +618,13 @@ def savez(file, *args, **kwds):
     _savez(file, args, kwds, False)
 
 
-def _savez_compressed_dispatcher(file, *args, **kwds):
+def _savez_compressed_dispatcher(file, *args, _float_uncompressed=False, **kwds):
     yield from args
     yield from kwds.values()
 
 
 @array_function_dispatch(_savez_compressed_dispatcher)
-def savez_compressed(file, *args, **kwds):
+def savez_compressed(file, *args, _float_uncompressed=False, **kwds):
     """
     Save several arrays into a single file in compressed ``.npz`` format.
 
@@ -645,6 +645,8 @@ def savez_compressed(file, *args, **kwds):
         Arrays to save to the file. Please use keyword arguments (see
         `kwds` below) to assign names to arrays.  Arrays specified as
         args will be named "arr_0", "arr_1", and so on.
+    _float_uncompressed: bool, optional
+        don't compress floating-point type arrays
     kwds : Keyword arguments, optional
         Arrays to save to the file. Each array will be saved to the
         output file with its corresponding keyword name.
@@ -686,7 +688,7 @@ def savez_compressed(file, *args, **kwds):
     True
 
     """
-    _savez(file, args, kwds, True)
+    _savez(file, args, kwds, "selective" if _float_uncompressed else True)
 
 
 def _savez(file, args, kwds, compress, allow_pickle=True, pickle_kwargs=None):
@@ -707,7 +709,7 @@ def _savez(file, args, kwds, compress, allow_pickle=True, pickle_kwargs=None):
                 "Cannot use un-named variables and keyword %s" % key)
         namedict[key] = val
 
-    if compress:
+    if compress and compress != "selective":
         compression = zipfile.ZIP_DEFLATED
     else:
         compression = zipfile.ZIP_STORED
@@ -718,6 +720,9 @@ def _savez(file, args, kwds, compress, allow_pickle=True, pickle_kwargs=None):
         fname = key + '.npy'
         val = np.asanyarray(val)
         # always force zip64, gh-10776
+        if compress == "selective" and not issubclass(val.dtype.type, np.floating):
+            fname = zipfile.ZipInfo(fname)
+            fname.compress_type = zipfile.ZIP_DEFLATED
         with zipf.open(fname, 'w', force_zip64=True) as fid:
             format.write_array(fid, val,
                                allow_pickle=allow_pickle,
